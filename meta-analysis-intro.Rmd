@@ -1,0 +1,309 @@
+---
+title: "Introduzione a R Markdown"
+subtitle: "<br/>Create amazing documents with R"
+author: "Filippo Gambarota"
+institute: "Università di Padova"
+date: ""
+output:
+  xaringan::moon_reader:
+    css: [default, "files/metropolis.css", "files/metropolis-fonts.css"]
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+---
+
+```{r setup, include=FALSE}
+options(htmltools.dir.version = FALSE)
+knitr::opts_chunk$set(echo = FALSE,
+                      fig.align = "center",
+                      dpi = 300,
+                      fig.retina = 2,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+```{r packages}
+library(tidyverse)
+library(kableExtra)
+```
+
+
+```{r functions}
+# inline code formatting thanks to https://stackoverflow.com/a/20419016/9032257
+rinline <- function(code){
+  sprintf("<code>&grave;r %s&grave;</code>", code)
+}
+
+qtab <- function(data){
+    data %>% 
+        kbl(digits = 2) %>% 
+        kable_styling(bootstrap_options = c("striped", "condensed"),
+                      full_width = FALSE)
+}
+```
+
+# Outline
+
+- Cosa sono e cosa servono le meta-analisi
+- Quali sono i principali step
+- Un esempio di meta-analisi
+- Risorse per approfondire
+
+---
+class: inverse, center, middle
+
+# Cos'è una meta-analisi?
+
+---
+# Le tipologie di pubblicazione
+
+Le principali tipologie di pubblicazione sono:
+
+- Articolo che presenta una ricerca (e.g., esperimento) con dati
+- Review: lavoro che riassume più articoli ed esperimenti
+  - Narrative Review: riassunto principalmente teorico/narrativo
+  - Systematic Review: ricerca sistematica di tutti gli articoli in uno specifico ambito di ricerca
+  - Meta-analisi: analisi quantititativa di tutti gli articoli in uno specifico ambito di ricerca
+
+---
+
+# 1. Un cambiamento nel livello di analisi
+
+Quando facciamo una meta-analisi, la nostra unità statistica non è più il soggetto, ma è lo studio/articolo:
+
+```{r}
+knitr::include_graphics("img/statistical-unit.svg")
+```
+
+---
+
+# 2. Estrazione di misure di effect size
+
+Gli effect sizes sono delle statistiche (come la media o la mediana) che vengono riportate negli articoli o che devono essere calcolate. Hanno delle caratteristiche importanti:
+
+- Sono direttamente intepretabili in termini di **grandezza dell'effetto**
+- Sono **indipendenti dal tipo di variabile** su cui vengono calcolati
+- Permettono di **confrontare studi diversi**
+
+---
+# Grandezza dell'effetto - Cohen's d
+
+*La differenza di empatia tra studenti di Psicologia è Ingegneria è 10.5 con una deviazione standard di 5*. Cosa significa una differenza di 10.5? E' grande? E' piccola?
+
+Per rispondere a queste domande dobbiamo tenere in considerazione sia la differenza che la variabilità.
+
+```{r, eval = FALSE}
+g1 <- rnorm(100, 50, 20)
+g2 <- rnorm(100, 55, 20)
+
+cohen_d <- function(x, y){
+    abs((mean(x) - mean(y))/((sd(x) + sd(y))/2))
+}
+
+t.test(g1, g2)
+cohen_d(g1, g2)
+
+ggplot(data.frame(x = c(-2, 2)), aes(x)) + 
+    geom_segment(aes(x = 0, xend = 1, y = dnorm(0, 0, 1), yend = dnorm(0, 0, 1))) +
+    stat_function(fun = dnorm,
+                  geom = "area",
+                  fill = "grey",
+                  alpha = 0.5,
+                  args = list(mean = 0, sd = 1),
+                  xlim = c(-4,4)) +
+    stat_function(fun = dnorm,
+                  geom = "area",
+                  fill = "lightblue",
+                  alpha = 0.5,
+                  args = list(mean = 1, sd = 1),
+                  xlim = c(-4,4.5)) +
+    theme_minimal()
+```
+
+<!-- TODO plot con due cohen d -->
+
+---
+
+# Grandezza dell'effetto - Cohen's d
+
+Grafico del cohen's d
+
+<!-- TODO formula del cohen's d che fa capire il contributo della differenza tra medie e la varianza -->
+
+---
+# Grandezza dell'effetto - Correlazione di Pearson
+
+Anche la correlazione è la standardizzazione della covarianza, ovvero quanto variano assieme due variabili:
+
+```{r}
+Sigma <- matrix(c(10,3,3,2),2,2)
+dat <- MASS::mvrnorm(n = 1000, rep(0, 2), Sigma) %>% data.frame()
+names(dat) <- c("x", "y")
+
+dat %>% 
+    pivot_longer(1:2) %>% 
+    ggplot() +
+    geom_histogram(aes(x = value),
+                   fill = "lightblue",
+                   col = "black") +
+    facet_wrap(~name) +
+    theme_minimal(base_size = 20) +
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_blank())
+```
+
+---
+# Grandezza dell'effetto - Correlazione di Pearson
+
+Guardando la co-variazione (i.e. come due osservazioni variano rispetto alla loro media) posso mettere in relazione due variabili. Dividendo per il prodotto delle deviazioni standard, ottengo una misura standardizzata da -1 a 1:
+
+```{r}
+cor_plot <- ggplot(dat, aes(x, y)) + 
+    geom_point(size = 2) +
+    theme_minimal(base_size = 20) +
+    geom_smooth(method = "lm", se = FALSE)
+
+ggExtra::ggMarginal(cor_plot, type = "histogram", fill = "lightblue")
+```
+
+---
+# 3. Pesare per la precisione
+
+Misuriamo la differenza di empatia tra studenti di Psicologia ed Ingegneria. Lo stesso studio viene ripetuto in 10 Atenei diversi e noi vogliamo meta-analizzare i risultati:
+
+```{r}
+emp <- read_csv("data/emp_psico_ing.csv")
+qtab(emp)
+```
+---
+# 3. Pesare per la precisione
+
+L'ateneo 4 e l'ateneo 9 hanno lo stesso effect size (i.e. la differenza è simile). Ma quanto è precisa quella stima?
+
+```{r}
+ggplot(emp) +
+  geom_point(aes(x = yi, y = id)) +
+  xlab("Empatia Psicologia - Ingegneria") +
+```
+
+---
+# Quick digression - Sampling Distribution
+
+.box[
+Ogni statistica che calcoliamo sul campione ha una sua distribuzione campionaria che dipende essenzialmente dalla numerosità campionaria.
+]
+
+--
+
+.box[
+La deviazione standard della distribuzione campionaria, **Errore Standard**, indica la precisione della stima
+]
+
+--
+
+.box[
+Due studi possono avere lo stesso effect size MA due errori standard (i.e., precisione) diversi
+]
+
+---
+# 2. Pesare per la precisione
+
+Se vogliamo tenere in considerazione la precisione della stima possiamo assegnare un peso ad ogni studio che dipende dall'inverso della sua varianza
+
+```{r}
+ggplot(emp) +
+  geom_point(aes(x = yi, y = id,
+                 size = 1/vi)) +
+  xlab("Empatia Psicologia - Ingegneria")
+```
+
+---
+class: inverse, center, middle
+
+# Come mettere insieme gli studi?
+
+---
+# Meta-analisi come una media (pesata)
+
+Essenzialmente, possiamo fare una meta-analisi facendo la media dei nostri effect sizes ma pesandoli per la loro precisione (inverso della varianza):
+
+$$\hat \theta = \frac{\sum^K_{k=1}\hat\theta_kw_k}{\sum^K_{k=1}w_k}$$
+Dove $w_k = \frac{1}{s^2_k}$ ovvero l'inverso della varianza
+
+---
+class: inverse, center, middle
+
+# Modelli di meta-analisi
+
+---
+Tuttavia, questa semplice media pesata non è il solo modo di combinare gli studi. Essenzialmente ci sono due principali modelli meta-analitici:
+
+- fixed-effect model
+- random-effect model
+
+Comprendere la distinzione è fondamentale perchè i due modelli differiscono sia dal punto di vista analitico ma anche interpretativo.
+
+---
+# Fixed-effect Model
+
+L'assunzione principale è che tutti gli studi che state considerando (e meta-analizzando) stiano cercando di stimare lo stesso fenomeno. La variabilità che troviamo (studi con un effetto piccolo, altri grande o assente) è dovuta **SOLO** al fatto che non abbiamo campioni infititi e quindi il sampling error non è 0.
+
+```{r}
+knitr::include_graphics("img/fixed_effect.svg")
+```
+
+---
+# Fixed-effect Model
+
+Tradotto nel nostro esempio, il fatto che ci siano diversi atenei, diverse regioni, diversi corsi di studio di ingegneria/psicologia non ha nessuna rilevanza. Gli studenti di Milano sono gli stessi di Bologna o Roma.
+
+--
+
+Fittiamo il modello (vediamo dopo i comandi):
+
+--
+
+```{r}
+fit_fix <- metafor::rma(yi, vi, data = emp, method = "FE")
+fit_fix
+```
+
+---
+# Fixed-effect Model
+
+Concentriamoci sulla parte `Model Results`: Vediamo l'effetto stimato `estimate`, l'errore standard `se` e il test `z`. Come vediamo, la meta-analisi ci dice che la differenza tra psicologia ed ingegneria è di `round(fit$b[[1]], 2)` e non è significativa con un $\alpha = 0.05$.
+
+<!-- TODO metti qualcosa che spiega anche gli altri parametri H2 e I2 -->
+
+---
+# Random-effect Model
+
+La domanda ora è: ha veramente senso assumere che non ci sia reale differenza negli effetti? Possiamo ipotizzare che in alcuni atenei italiani questa differenza sia maggiore e in altri minore. Quindi non abbiamo più un solo effetto da stimare, ma una distribuzione di effetti. Una distribuzione (normale) è definita da una media e una deviazione standard. Infatti il **random-effect model** stima sia l'effetto medio che la variabilità (eterogeneità):
+
+```{r}
+knitr::include_graphics("img/random_effect.svg")
+```
+
+---
+# Random-effect Model
+
+```{r}
+fit_ran <- metafor::rma(yi, vi, data = emp, method = "REML")
+fit_ran
+```
+
+---
+
+class: final-slide, center, middle
+
+# Are you ready to create amazing documents? `r emo::ji("smile")`
+
+</br>
+
+.contact[`r icons::fontawesome("envelope")` **filippo.gambarota@gmail.com**]
+</br>
+.contact[`r icons::fontawesome("twitter")` **@fgambarota**]
+</br>
+.contact[`r icons::fontawesome("github")` **filippogambarota**]
+.logo[]
